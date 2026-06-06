@@ -1,25 +1,104 @@
-# Auto-DTS 🚀
+# Auto-DTS
 
-A Python-based command-line utility to automate the submission of Daily Time Sheets (DTS) to the company HR portal. 
+Auto-DTS is a headless Python CLI that submits Daily Time Sheets to BSS by calling backend HTTP endpoints directly.
 
-By bypassing brittle DOM-based UI automation (like UIPath) and interacting directly with the backend HTTP API, this tool reads timesheet data from a flat Excel file, handles CSRF token authentication automatically, and submits entries in seconds.
+It avoids browser/UI automation and performs:
 
-## ✨ Features
-* **Headless API Integration:** Submits standard Form Data directly to the server, completely ignoring slow page load times and UI rendering.
-* **Smart Excel Parsing:** Reads a simple, flat Excel structure and dynamically groups multiple tasks per day into a single payload.
-* **Auto-Authentication:** Uses `requests.Session()` to handle login cookies and uses `BeautifulSoup` to scrape fresh CSRF security tokens on the fly.
-* **Safe-Skip Logic:** Automatically detects `DTS_STATUS_APPROVED` flags and skips dates that have already been locked or approved by management to prevent crashes.
-* **Robust Error Handling:** Built-in automatic retry adapter with backoff factors for handling sudden 502/503 internal server errors.
-* **Secure Input:** Uses `getpass` to prompt for passwords securely in the terminal without hardcoding credentials.
+- Login with CSRF token scraping
+- Date-based timesheet page fetches
+- Per-date CSRF extraction
+- Form-urlencoded payload submission with Symfony-style bracket keys
+- Safe skipping for approved/locked timesheets
 
-## 🛠️ Prerequisites
-* Python 3.8+
-* An active company HR portal account
+## Requirements
 
-## 📦 Installation
+- Python 3.8+
+- Valid HR portal account
 
-1. Clone the repository:
-   ```bash
-   git clone [https://github.com/iandotjs/auto-dts.git](https://github.com/iandotjs/auto-dts.git)
-   cd auto-dts
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Input Excel Format
+
+Default file name: timesheet_data.xlsx
+
+Required columns:
+
+- Date
+- Type
+- Activity Name
+- Regular Hours
+- OT Hours
+
+Notes:
+
+- Date values are normalized to YYYY-MM-DD
+- OT Hours can be blank and defaults to 0
+- Rows are grouped by Date and submitted once per day
+
+## Activity Mapping
+
+The script uses internal dictionaries in [app.py](app.py):
+
+- DIRECT_ACTIVITIES for direct activity ID mapping
+- INDIRECT_ACTIVITIES for category/activity mapping
+
+Update these dictionaries to match the latest BSS master data.
+
+## Run
+
+Basic run:
+
+```bash
+python app.py
+```
+
+With options:
+
+```bash
+python app.py --excel timesheet_data.xlsx --username your.user --project 484 --workorder S26-000-12V-00
+```
+
+Dry run (build/validate payloads only, no submission):
+
+```bash
+python app.py --dry-run
+```
+
+Set credentials by environment variables:
+
+```bash
+set AUTO_DTS_USERNAME=your.user
+set AUTO_DTS_PASSWORD=your_password
+python app.py
+```
+
+## CLI Options
+
+- --excel: Path to Excel file
+- --username: Portal username (fallback: AUTO_DTS_USERNAME)
+- --password: Portal password (fallback: AUTO_DTS_PASSWORD)
+- --project: Project ID used for direct activities
+- --workorder: Workorder used for direct activities
+- --delay: Delay in seconds between day submissions (default 1.5)
+- --dry-run: Do not submit updates
+
+## Submission Flow
+
+1. GET /login and parse _csrf_token
+2. POST /login_check with _username, _password, _csrf_token
+3. For each date:
+4. GET /dtstimesheet/?dtsdate=YYYY-MM-DD and parse oss_dtsbundle_timesheet[_token]
+5. Skip when approved/locked flag is present
+6. POST /dtstimesheet/update with _method=PUT and form-urlencoded payload
+
+## Error Handling
+
+- Automatic retries for 500/502/503/504
+- Data validation for required columns and numeric hours
+- Skips unknown activity mappings with warnings
+- Run summary with submitted/skipped/failed counts
    
