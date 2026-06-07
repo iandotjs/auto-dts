@@ -41,12 +41,23 @@ Notes:
 
 ## Activity Mapping
 
-The script uses internal dictionaries in [app.py](app.py):
+The script loads activity mappings from JSON files:
 
-- DIRECT_ACTIVITIES for direct activity ID mapping
-- INDIRECT_ACTIVITIES for category/activity mapping
+- [direct_activities.json](direct_activities.json): direct activity ID mapping
+- [indirect_activities.json](indirect_activities.json): category/activity mapping
 
-Update these dictionaries to match the latest BSS master data.
+Update these files to match the latest BSS master data.
+
+You can run mapping preflight without logging in/submitting:
+
+```bash
+python app.py --validate-mappings
+```
+
+This checks:
+
+- Mapping JSON structure and value types
+- Unknown activity names in Excel that are not covered by mappings
 
 ## Run
 
@@ -85,6 +96,9 @@ python app.py
 - --workorder: Workorder used for direct activities
 - --delay: Delay in seconds between day submissions (default 1.5)
 - --dry-run: Do not submit updates
+- --direct-map: Path to direct activity mapping JSON
+- --indirect-map: Path to indirect activity mapping JSON
+- --validate-mappings: Validate mappings and Excel activity coverage, then exit
 
 ## Submission Flow
 

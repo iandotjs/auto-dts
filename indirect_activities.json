@@ -1,0 +1,133 @@
+{
+  "Billing preparation": {"category": 1, "activity": 8},
+  "Create, Update Project Plan": {"category": 1, "activity": 2},
+  "Estimation": {"category": 1, "activity": 1},
+  "Progress meeting": {"category": 1, "activity": 7},
+  "Project initiation activities": {"category": 1, "activity": 3},
+  "Project monitoring activities": {"category": 1, "activity": 6},
+  "Project planning meetings": {"category": 1, "activity": 4},
+  "Review activities for planning": {"category": 1, "activity": 5},
+
+  "Analysis of requirements documents": {"category": 2, "activity": 12},
+  "Create, Update, Rework Requirements Documents": {"category": 2, "activity": 9},
+  "Prototyping": {"category": 2, "activity": 13},
+  "Review activities of requirements documents": {"category": 2, "activity": 10},
+  "Rework of requirements documents - MRs": {"category": 2, "activity": 11},
+
+  "Create, Update, Rework BD documents": {"category": 3, "activity": 14},
+  "Review activities of BD documents": {"category": 3, "activity": 15},
+  "Rework of BD documents - MRs": {"category": 3, "activity": 16},
+
+  "Create, Update, Rework IT Specifications": {"category": 4, "activity": 17},
+  "Review activities of IT specifications": {"category": 4, "activity": 18},
+  "Rework of IT specifications - MRs": {"category": 4, "activity": 19},
+
+  "Create, Update, Rework SIT specifications": {"category": 5, "activity": 20},
+  "Review activities of SIT specifications": {"category": 5, "activity": 21},
+  "Rework of SIT specifications - MRs": {"category": 5, "activity": 22},
+
+  "Create, Update, Rework DQA Specifications": {"category": 6, "activity": 23},
+  "Review activities of DQA specifications": {"category": 6, "activity": 24},
+  "Rework of DQA specifications - MRs": {"category": 6, "activity": 25},
+
+  "Create, Update, Rework FD documents": {"category": 7, "activity": 26},
+  "Review activities of FD documents": {"category": 7, "activity": 27},
+  "Rework of FD documents - MRs": {"category": 7, "activity": 28},
+
+  "Create, Update, Rework FT specifications": {"category": 8, "activity": 29},
+  "Review activities of FT specifications": {"category": 8, "activity": 30},
+  "Rework of FT specifications - MRs": {"category": 8, "activity": 31},
+
+  "Create, Update, Rework DD documents": {"category": 9, "activity": 32},
+  "Review activities of DD documents": {"category": 9, "activity": 33},
+  "Rework of DD documents - MRs": {"category": 9, "activity": 34},
+
+  "Create, Update, Rework UT specifications": {"category": 10, "activity": 35},
+  "Review activities of UT specifications": {"category": 10, "activity": 36},
+  "Rework of UT specifications - MRs": {"category": 10, "activity": 37},
+
+  "Create, Update of Source Codes": {"category": 11, "activity": 38},
+  "Review activities of source codes": {"category": 11, "activity": 39},
+  "Rework of source code - MRs": {"category": 11, "activity": 40},
+
+  "Create, Update, Rework Test Code": {"category": 12, "activity": 41},
+  "Review activities of test code": {"category": 12, "activity": 42},
+  "Rework of test code - MRs": {"category": 12, "activity": 43},
+
+  "Bug fix of UT bugs": {"category": 13, "activity": 45},
+  "Bug investigation of UT bugs": {"category": 13, "activity": 44},
+  "Review, Confirmation of UT bug fixes": {"category": 13, "activity": 46},
+
+  "Bug fix of FT or IT bugs": {"category": 14, "activity": 48},
+  "Bug investigation of FT or IT bugs": {"category": 14, "activity": 47},
+  "Review or Confirmation of FT, IT bug fixes": {"category": 14, "activity": 49},
+
+  "Bug fix of SIT bugs": {"category": 15, "activity": 51},
+  "Bug investigation of SIT bugs": {"category": 15, "activity": 50},
+  "Review or Confirmation of SIT bug fixes": {"category": 15, "activity": 52},
+
+  "Bug fix of DQA bugs": {"category": 16, "activity": 54},
+  "Bug investigation of DQA bugs": {"category": 16, "activity": 53},
+  "Review or Confirmation of DQA bug fixes": {"category": 16, "activity": 55},
+
+  "Bug fix of field bugs": {"category": 17, "activity": 57},
+  "Bug investigation of field bugs": {"category": 17, "activity": 56},
+  "Review or Confirmation of field bug fixes": {"category": 17, "activity": 58},
+
+  "Bug fix (Pure Maintenance or Commercial Support)": {"category": 18, "activity": 60},
+  "Bug investigation (Pure Maintenance or Commercial Support)": {"category": 18, "activity": 59},
+  "Review, Confirmation of bug fixes (Pure Maintenance, Commercial Support)": {"category": 18, "activity": 61},
+
+  "DQA activities": {"category": 19, "activity": 65},
+  "Function or Integration Test Activities": {"category": 19, "activity": 63},
+  "Other testing (with specs)": {"category": 19, "activity": 66},
+  "Other testing (without specs)": {"category": 19, "activity": 67},
+  "System integration test activities": {"category": 19, "activity": 64},
+  "Unit test activities": {"category": 19, "activity": 62},
+
+  "Quality management": {"category": 20, "activity": 68},
+  "Wrap-up activities": {"category": 21, "activity": 69},
+
+  "CM administration activities": {"category": 22, "activity": 71},
+  "CM audit": {"category": 22, "activity": 72},
+  "CM environment preparation activities": {"category": 22, "activity": 70},
+  "Release activities": {"category": 22, "activity": 73},
+
+  "Create, Update, Rework End-user Documentation": {"category": 23, "activity": 74},
+  "Review activities of end-user documentation": {"category": 23, "activity": 75},
+  "Rework of end-user documentation - MRs": {"category": 23, "activity": 76},
+  "Translation of end-user documentation.": {"category": 23, "activity": 77},
+
+  "Technical support activities (active)": {"category": 24, "activity": 78},
+  "Technical support activities (standby)": {"category": 24, "activity": 79},
+
+  "Request support from vendors": {"category": 25, "activity": 80},
+
+  "Attendance activities (Cultural 1)": {"category": 26, "activity": 83},
+  "Attendance activities (Cultural 2)": {"category": 26, "activity": 97},
+  "Attendance activities (Cultural 3)": {"category": 26, "activity": 98},
+  "Attendance activities (Cultural 4)": {"category": 26, "activity": 99},
+  "Attendance activities (Cultural 5 - NIHONGO)": {"category": 26, "activity": 100},
+  "Attendance activities (Technical 1)": {"category": 26, "activity": 82},
+  "Attendance activities (Technical 2)": {"category": 26, "activity": 101},
+  "Attendance activities (Technical 3)": {"category": 26, "activity": 102},
+  "Attendance activities (Technical 4)": {"category": 26, "activity": 103},
+  "Attendance activities (Technical 5)": {"category": 26, "activity": 104},
+  "Research, Study activities, Technical Transfer": {"category": 26, "activity": 81},
+
+  "Teaching, Facilitation (Technical Transfer)": {"category": 27, "activity": 84},
+  "Teaching, Facilitation activities (Cultural)": {"category": 27, "activity": 86},
+  "Teaching, Facilitation activities (Technical)": {"category": 27, "activity": 85},
+
+  "Hardware management activities": {"category": 28, "activity": 87},
+  "Software system management activities": {"category": 28, "activity": 88},
+
+  "Marketing, Pre-Sales, Sales activities": {"category": 29, "activity": 89},
+  "Systems Engineering": {"category": 30, "activity": 90},
+  "Systems Integration": {"category": 31, "activity": 91},
+
+  "Company or group activities": {"category": 32, "activity": 92},
+  "Managers meetings": {"category": 32, "activity": 93},
+  "Others": {"category": 32, "activity": 95},
+  "Translation": {"category": 32, "activity": 94}
+}

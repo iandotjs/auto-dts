@@ -1,8 +1,30 @@
 import argparse
 import getpass
+import json
 import os
+import re
 import sys
 import time
+
+
+def _load_dotenv(path=".env"):
+    """Load key=value pairs from a .env file into os.environ (no-op if missing)."""
+    try:
+        with open(path, encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
 
 import pandas as pd
 import requests
@@ -17,22 +39,13 @@ LOGIN_URL = f"{BASE_URL}/login_check"
 LOGIN_PAGE_URL = f"{BASE_URL}/login"
 TIMESHEET_URL = f"{BASE_URL}/dtstimesheet/"
 UPDATE_URL = f"{BASE_URL}/dtstimesheet/update"
-DEFAULT_USERNAME = "dinopol.ij"
+DEFAULT_USERNAME = os.getenv("AUTO_DTS_USERNAME", "dinopol.ij")
 DEFAULT_PROJECT_ID = "484"
 DEFAULT_WORKORDER = "S26-000-12V-00"
+DIRECT_MAP_FILE = "direct_activities.json"
+INDIRECT_MAP_FILE = "indirect_activities.json"
 
 REQUIRED_COLUMNS = ["Date", "Type", "Activity Name", "Regular Hours", "OT Hours"]
-
-# Keep these dictionaries complete and synced with internal BSS master data IDs.
-DIRECT_ACTIVITIES = {
-    "Coding > [Tool] Source Code Modification": 42398,
-    "Testing > UT Execution": 42383,
-}
-
-INDIRECT_ACTIVITIES = {
-    "Progress meeting": {"category": 1, "activity": 7},
-    "Company or group activities": {"category": 32, "activity": 92},
-}
 
 
 def parse_args():
@@ -71,7 +84,98 @@ def parse_args():
         action="store_true",
         help="Build and validate payloads without submitting",
     )
+    parser.add_argument(
+        "--direct-map",
+        default=DIRECT_MAP_FILE,
+        help="Path to direct activity mapping JSON",
+    )
+    parser.add_argument(
+        "--indirect-map",
+        default=INDIRECT_MAP_FILE,
+        help="Path to indirect activity mapping JSON",
+    )
+    parser.add_argument(
+        "--validate-mappings",
+        action="store_true",
+        help="Validate mapping files and report unknown activities in Excel, then exit",
+    )
     return parser.parse_args()
+
+
+def normalize_activity_name(name):
+    return re.sub(r"\s+", " ", str(name).strip())
+
+
+def load_json(path, label):
+    with open(path, "r", encoding="utf-8") as fp:
+        try:
+            data = json.load(fp)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{label} JSON is invalid: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must be a JSON object of activity-name keys.")
+    return data
+
+
+def validate_direct_mapping(raw_map):
+    validated = {}
+    for key, value in raw_map.items():
+        normalized_key = normalize_activity_name(key)
+        if not normalized_key:
+            raise ValueError("DIRECT_ACTIVITIES contains an empty key.")
+        if not isinstance(value, int):
+            raise ValueError(
+                f"DIRECT_ACTIVITIES value for '{key}' must be an integer, got {type(value).__name__}."
+            )
+        if normalized_key in validated and validated[normalized_key] != value:
+            raise ValueError(
+                f"DIRECT_ACTIVITIES has duplicate normalized key '{normalized_key}' with different IDs."
+            )
+        validated[normalized_key] = value
+    return validated
+
+
+def validate_indirect_mapping(raw_map):
+    validated = {}
+    for key, value in raw_map.items():
+        normalized_key = normalize_activity_name(key)
+        if not normalized_key:
+            raise ValueError("INDIRECT_ACTIVITIES contains an empty key.")
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"INDIRECT_ACTIVITIES value for '{key}' must be an object with 'category' and 'activity'."
+            )
+        if "category" not in value or "activity" not in value:
+            raise ValueError(
+                f"INDIRECT_ACTIVITIES '{key}' must include both 'category' and 'activity'."
+            )
+        category = value["category"]
+        activity = value["activity"]
+        if not isinstance(category, int) or not isinstance(activity, int):
+            raise ValueError(
+                f"INDIRECT_ACTIVITIES '{key}' category/activity must be integers."
+            )
+        normalized_value = {"category": category, "activity": activity}
+        if normalized_key in validated and validated[normalized_key] != normalized_value:
+            raise ValueError(
+                f"INDIRECT_ACTIVITIES has duplicate normalized key '{normalized_key}' with different values."
+            )
+        validated[normalized_key] = normalized_value
+    return validated
+
+
+def load_activity_mappings(direct_map_path, indirect_map_path):
+    print("[MAP] Loading activity mappings...")
+    direct_raw = load_json(direct_map_path, "Direct mapping")
+    indirect_raw = load_json(indirect_map_path, "Indirect mapping")
+    direct_activities = validate_direct_mapping(direct_raw)
+    indirect_activities = validate_indirect_mapping(indirect_raw)
+    print(
+        "[MAP] Loaded "
+        f"{len(direct_activities)} direct and {len(indirect_activities)} indirect activity mappings."
+    )
+    return direct_activities, indirect_activities
 
 
 def create_robust_session():
@@ -81,7 +185,7 @@ def create_robust_session():
         connect=5,
         read=5,
         backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
+        status_forcelist=[502, 503, 504],
         allowed_methods=frozenset(["GET", "POST"]),
     )
     adapter = HTTPAdapter(max_retries=retries)
@@ -110,55 +214,42 @@ def login(session, username, password):
     if not login_token_input or not login_token_input.get("value"):
         print("[ERROR] Login CSRF token not found on login page.")
         return False
+    login_token = login_token_input.get("value")
 
     payload = {
         "_username": username,
         "_password": password,
-        "_csrf_token": login_token_input.get("value"),
+        "_csrf_token": login_token,
+        "_remember_me": "on",
+    }
+    login_headers = {
+        "Referer": LOGIN_PAGE_URL,
+        "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    response = session.post(LOGIN_URL, data=payload, timeout=30)
+    # Symfony returns 302 on success, 200 on failure.
+    response = session.post(
+        LOGIN_URL, data=payload, headers=login_headers, timeout=30, allow_redirects=False
+    )
 
-    if "Invalid" in response.text or "Bad credentials" in response.text:
-        print("[ERROR] Login failed: invalid credentials.")
+    if response.status_code not in (301, 302, 303, 307, 308):
+        print("[ERROR] Login failed: server did not redirect after credential POST.")
         return False
 
-    cookie_names = set(session.cookies.keys())
-    expected = {"ASP.NET_SessionId", "PHPSESSID"}
-    if not expected.issubset(cookie_names):
-        # Some environments only issue one cookie or rename session cookies behind gateways.
+    redirect_url = response.headers.get("Location", "")
+    if not redirect_url.startswith("http"):
+        redirect_url = BASE_URL.rstrip("/") + "/" + redirect_url.lstrip("/")
+
+    # A redirect back to the login page means credentials were rejected.
+    if "login" in redirect_url.lower():
         print(
-            "[WARN] Login response did not include all expected session cookies "
-            f"(got: {', '.join(sorted(cookie_names)) or 'none'}). Verifying session via protected page..."
+            "[ERROR] Login failed: server redirected back to the login page. "
+            "Check your username and password."
         )
-
-    probe_date = time.strftime("%Y-%m-%d")
-    probe_url = f"{TIMESHEET_URL}?dtsdate={probe_date}"
-    try:
-        auth_probe = session.get(probe_url, timeout=30, allow_redirects=True)
-    except requests.RequestException as exc:
-        print(f"[WARN] Could not verify authenticated session via probe URL: {exc}")
-        print("[WARN] Continuing; authentication will be validated again during per-date processing.")
-        print("[OK] Login accepted (probe skipped due server/network instability).")
-        return True
-
-    if auth_probe.status_code >= 500:
-        print(
-            f"[WARN] Probe endpoint returned HTTP {auth_probe.status_code}. "
-            "Continuing; server may be temporarily unstable."
-        )
-        print("[OK] Login accepted (probe not conclusive).")
-        return True
-
-    probe_text_lower = auth_probe.text.lower()
-    if (
-        "name=\"_username\"" in probe_text_lower
-        or "name=\"_password\"" in probe_text_lower
-        or "name=\"_csrf_token\"" in probe_text_lower
-    ):
-        print("[ERROR] Authentication did not persist (still seeing login form).")
         return False
 
+    # Follow the success redirect so session cookies are established.
+    session.get(redirect_url, timeout=30)
     print("[OK] Login successful.")
     return True
 
@@ -173,6 +264,11 @@ def load_and_validate_excel(excel_path):
 
     df = df[REQUIRED_COLUMNS].copy()
 
+    # Load optional Holiday column (defaults to False if missing)
+    if "Holiday" not in df.columns:
+        df["Holiday"] = False
+    df["Holiday"] = df["Holiday"].fillna(False).astype(bool)
+
     parsed_dates = pd.to_datetime(df["Date"], errors="coerce")
     invalid_dates = df[parsed_dates.isna()]
     if not invalid_dates.empty:
@@ -180,6 +276,7 @@ def load_and_validate_excel(excel_path):
             "Invalid Date values found. Ensure dates are valid and can be formatted as YYYY-MM-DD."
         )
     df["Date"] = parsed_dates.dt.strftime("%Y-%m-%d")
+    df["_parsed_date"] = parsed_dates
 
     df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors="coerce")
     df["OT Hours"] = pd.to_numeric(df["OT Hours"], errors="coerce").fillna(0.0)
@@ -187,21 +284,127 @@ def load_and_validate_excel(excel_path):
         raise ValueError("Regular Hours contains non-numeric values.")
 
     df["Type"] = df["Type"].astype(str).str.strip().str.title()
-    df["Activity Name"] = df["Activity Name"].astype(str).str.strip()
+    df["Activity Name"] = df["Activity Name"].apply(normalize_activity_name)
+
+    # Validate weekday hour requirements
+    _validate_weekday_hours(df)
 
     grouped = list(df.sort_values("Date").groupby("Date", sort=True))
     print(f"Found {len(grouped)} unique day(s) to process.")
-    return grouped
+    if len(grouped) == 0:
+        print("[WARN] No rows found to process in the Excel file.")
+    return df, grouped
+
+
+def _validate_weekday_hours(df):
+    """Validate that weekdays (Mon-Fri) have >= 8 hours or are marked as holidays."""
+    for date_str, group in df.groupby("Date"):
+        # Get the first row's parsed date to determine day of week
+        parsed_date = group["_parsed_date"].iloc[0]
+        weekday = parsed_date.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+        is_holiday = group["Holiday"].iloc[0]
+        total_regular = group["Regular Hours"].sum()
+
+        # Only validate Mon-Fri (weekday < 5)
+        if weekday < 5 and not is_holiday:
+            if total_regular < 8.0:
+                raise ValueError(
+                    f"Date {date_str} is a weekday with only {total_regular:.2f} regular hours. "
+                    "Weekdays require >= 8 hours or must be marked as Holiday=True."
+                )
+
+
+def validate_mappings_against_excel(df, direct_activities, indirect_activities):
+    print("\n[CHECK] Validating Excel activities against mappings...")
+    direct_unknown = sorted(
+        {
+            name
+            for _, row in df[df["Type"] == "Direct"].iterrows()
+            for name in [row["Activity Name"]]
+            if name not in direct_activities
+        }
+    )
+    indirect_unknown = sorted(
+        {
+            name
+            for _, row in df[df["Type"] == "Indirect"].iterrows()
+            for name in [row["Activity Name"]]
+            if name not in indirect_activities
+        }
+    )
+
+    if direct_unknown:
+        print("[WARN] Unknown direct activity names found in Excel:")
+        for name in direct_unknown:
+            print(f"  - {name}")
+
+    if indirect_unknown:
+        print("[WARN] Unknown indirect activity names found in Excel:")
+        for name in indirect_unknown:
+            print(f"  - {name}")
+
+    if not direct_unknown and not indirect_unknown:
+        print("[OK] All Excel activities are covered by the mappings.")
+        return True
+
+    print("[CHECK] Mapping validation found gaps. Please update mapping JSON files.")
+    return False
 
 
 def is_timesheet_locked(page_html, soup):
-    approved_flags = ["DTS_STATUS_APPROVED = ''", "DTS_STATUS_APPROVED === ''"]
-    if any(flag in page_html for flag in approved_flags):
+    status_matches = dict(
+        re.findall(r'var\s+(DTS_STATUS_[A-Z]+)\s*=\s*"([^"]*)"', page_html)
+    )
+    approved_status = status_matches.get("DTS_STATUS_APPROVED")
+    submitted_status = status_matches.get("DTS_STATUS_SUBMITTED")
+    saved_status = status_matches.get("DTS_STATUS_SAVE")
+
+    # The page JS treats an empty string as the active state marker.
+    # approved == ''   -> approved/locked
+    # submitted == ''  -> submitted/non-editable
+    # save == ''       -> editable draft
+    if approved_status == "":
         return True
+    if submitted_status == "":
+        return True
+    if saved_status == "":
+        return False
+
+    # If the status variables are missing, fall back to the presence of the submit action.
     return soup.find("button", id="oss_dtsbundle_timesheet_submit") is None
 
 
-def build_daily_payload(group, csrf_token, target_date, project_id, workorder):
+def load_timesheet_page_for_date(session, target_date):
+    base_response = session.get(TIMESHEET_URL, timeout=30)
+    base_response.raise_for_status()
+
+    base_soup = BeautifulSoup(base_response.text, "html.parser")
+    token_input = base_soup.find("input", {"name": "oss_dtsbundle_timesheet[_token]"})
+    if not token_input or not token_input.get("value"):
+        raise ValueError("Failed to load base timesheet page token.")
+
+    payload = {
+        "_method": "PUT",
+        "oss_dtsbundle_timesheet[date]": target_date,
+        "oss_dtsbundle_timesheet[dailyHours]": "",
+        "oss_dtsbundle_timesheet[_token]": token_input.get("value"),
+    }
+    headers = {
+        "Referer": TIMESHEET_URL,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    return session.post(UPDATE_URL, data=payload, headers=headers, timeout=30)
+
+
+def build_daily_payload(
+    group,
+    csrf_token,
+    target_date,
+    project_id,
+    workorder,
+    direct_activities,
+    indirect_activities,
+):
     payload = {
         "_method": "PUT",
         "oss_dtsbundle_timesheet[date]": target_date,
@@ -223,7 +426,7 @@ def build_daily_payload(group, csrf_token, target_date, project_id, workorder):
         ot_hrs = f"{ot_hours:.2f}"
 
         if act_type == "Direct":
-            act_id = DIRECT_ACTIVITIES.get(act_name)
+            act_id = direct_activities.get(act_name)
             if not act_id:
                 print(f"  [WARN] Unknown direct activity '{act_name}'. Row skipped.")
                 continue
@@ -248,7 +451,7 @@ def build_daily_payload(group, csrf_token, target_date, project_id, workorder):
             continue
 
         if act_type == "Indirect":
-            mapped = INDIRECT_ACTIVITIES.get(act_name)
+            mapped = indirect_activities.get(act_name)
             if not mapped:
                 print(f"  [WARN] Unknown indirect activity '{act_name}'. Row skipped.")
                 continue
@@ -276,7 +479,16 @@ def build_daily_payload(group, csrf_token, target_date, project_id, workorder):
     return payload, mapped_regular_total, has_entries
 
 
-def submit_timesheets(session, grouped_data, project_id, workorder, delay, dry_run):
+def submit_timesheets(
+    session,
+    grouped_data,
+    project_id,
+    workorder,
+    delay,
+    dry_run,
+    direct_activities,
+    indirect_activities,
+):
     print("\n[3/3] Submitting timesheets...")
     print("-" * 60)
 
@@ -289,13 +501,18 @@ def submit_timesheets(session, grouped_data, project_id, workorder, delay, dry_r
 
     for target_date, group in grouped_data:
         print(f"\n[DATE] {target_date} ({len(group)} row(s))")
-        page_url = f"{TIMESHEET_URL}?dtsdate={target_date}"
-
         try:
-            page_response = session.get(page_url, timeout=30)
-            page_response.raise_for_status()
-        except requests.RequestException as exc:
+            page_response = load_timesheet_page_for_date(session, target_date)
+        except (requests.RequestException, ValueError) as exc:
             print(f"[ERROR] Failed to open timesheet page: {exc}")
+            summary["failed"] += 1
+            continue
+
+        if page_response.status_code >= 400:
+            print(
+                f"[ERROR] Timesheet page returned HTTP {page_response.status_code}. "
+                "Session may be expired or server is rejecting the request."
+            )
             summary["failed"] += 1
             continue
 
@@ -317,6 +534,8 @@ def submit_timesheets(session, grouped_data, project_id, workorder, delay, dry_r
             target_date,
             project_id,
             workorder,
+            direct_activities,
+            indirect_activities,
         )
 
         if not has_entries:
@@ -331,7 +550,7 @@ def submit_timesheets(session, grouped_data, project_id, workorder, delay, dry_r
             continue
 
         headers = {
-            "Referer": page_url,
+            "Referer": TIMESHEET_URL,
             "Content-Type": "application/x-www-form-urlencoded",
         }
 
@@ -362,6 +581,15 @@ def submit_timesheets(session, grouped_data, project_id, workorder, delay, dry_r
 def main():
     args = parse_args()
 
+    direct_activities, indirect_activities = load_activity_mappings(
+        args.direct_map, args.indirect_map
+    )
+
+    df, grouped_data = load_and_validate_excel(args.excel)
+    if args.validate_mappings:
+        is_valid = validate_mappings_against_excel(df, direct_activities, indirect_activities)
+        return 0 if is_valid else 2
+
     password = args.password
     if not password:
         password = getpass.getpass(prompt="Enter your HR portal password: ")
@@ -371,7 +599,6 @@ def main():
         if not login(session, args.username, password):
             return 1
 
-        grouped_data = load_and_validate_excel(args.excel)
         summary = submit_timesheets(
             session=session,
             grouped_data=grouped_data,
@@ -379,6 +606,8 @@ def main():
             workorder=args.workorder,
             delay=args.delay,
             dry_run=args.dry_run,
+            direct_activities=direct_activities,
+            indirect_activities=indirect_activities,
         )
 
         if summary["failed"] > 0:
